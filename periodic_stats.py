@@ -606,6 +606,11 @@ def save_weekly_stats_row(
     period_end_iso = stats.get("to_utc")
     period_label = f"{period_start_iso} -> {period_end_iso}" if period_start_iso and period_end_iso else None
     tweet_ids = tweet_ids or []
+    risk_stats = stats.get("risk") or {}
+    alert_stats = stats.get("alerts") or {}
+    bybit_stats = stats.get("bybit") or {}
+    okx_stats = stats.get("okx") or {}
+    deribit_stats = stats.get("deribit") or {}
 
     payload = {
         "period_start": period_start_iso,
@@ -614,31 +619,31 @@ def save_weekly_stats_row(
         "run_status": "success",
         "source_job": "render-cron-weekly-stats",
     
-        "avg_risk": stats.get("avg_risk"),
-        "median_risk": stats.get("median_risk"),
-        "max_risk": stats.get("max_risk"),
+        "avg_risk": risk_stats.get("avg_risk"),
+        "median_risk": risk_stats.get("median_risk"),
+        "max_risk": risk_stats.get("max_risk"),
     
-        "market_high_risk_ge2": stats.get("market_high_risk_hours", {}).get("risk_ge_2"),
-        "market_high_risk_ge3": stats.get("market_high_risk_hours", {}).get("risk_ge_3"),
-        "market_high_risk_ge4": stats.get("market_high_risk_hours", {}).get("risk_ge_4"),
-        "market_high_risk_ge5": stats.get("market_high_risk_hours", {}).get("risk_ge_5"),
+        "market_high_risk_ge2": risk_stats.get("market_high_risk_hours", {}).get("risk_ge_2"),
+        "market_high_risk_ge3": risk_stats.get("market_high_risk_hours", {}).get("risk_ge_3"),
+        "market_high_risk_ge4": risk_stats.get("market_high_risk_hours", {}).get("risk_ge_4"),
+        "market_high_risk_ge5": risk_stats.get("market_high_risk_hours", {}).get("risk_ge_5"),
     
-        "symbol_high_risk_ge2": stats.get("symbol_high_risk_hours", {}).get("risk_ge_2"),
-        "symbol_high_risk_ge3": stats.get("symbol_high_risk_hours", {}).get("risk_ge_3"),
-        "symbol_high_risk_ge4": stats.get("symbol_high_risk_hours", {}).get("risk_ge_4"),
-        "symbol_high_risk_ge5": stats.get("symbol_high_risk_hours", {}).get("risk_ge_5"),
+        "symbol_high_risk_ge2": risk_stats.get("symbol_high_risk_hours", {}).get("risk_ge_2"),
+        "symbol_high_risk_ge3": risk_stats.get("symbol_high_risk_hours", {}).get("risk_ge_3"),
+        "symbol_high_risk_ge4": risk_stats.get("symbol_high_risk_hours", {}).get("risk_ge_4"),
+        "symbol_high_risk_ge5": risk_stats.get("symbol_high_risk_hours", {}).get("risk_ge_5"),
     
-        "alerts_rows": stats.get("alerts_rows"),
+        "alerts_rows": alert_stats.get("rows"),
     
-        "bybit_avg_mci": stats.get("bybit_avg_mci"),
-        "bybit_regime_calm_pct": stats.get("bybit_regime_calm_pct"),
-        "bybit_regime_uncertain_pct": stats.get("bybit_regime_uncertain_pct"),
+        "bybit_avg_mci": bybit_stats.get("avg_mci"),
+        "bybit_regime_calm_pct": bybit_stats.get("regime_calm_pct"),
+        "bybit_regime_uncertain_pct": bybit_stats.get("regime_uncertain_pct"),
     
-        "okx_avg_olsi": stats.get("okx_avg_olsi"),
-        "okx_divergence_calm_dominant": stats.get("okx_divergence_calm_dominant"),
+        "okx_avg_olsi": okx_stats.get("avg_olsi"),
+        "okx_divergence_calm_dominant": okx_stats.get("divergence_calm_dominant"),
     
-        "deribit_btc_vbi": stats.get("deribit_btc_vbi"),
-        "deribit_eth_vbi": stats.get("deribit_eth_vbi"),
+        "deribit_btc_vbi": deribit_stats.get("btc_vbi"),
+        "deribit_eth_vbi": deribit_stats.get("eth_vbi"),
     
         "tweet_count": len(tweet_ids),
         "root_tweet_id": tweet_ids[0] if tweet_ids else None,
@@ -847,3 +852,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\nFATAL: {e}")
         sys.exit(1)
+

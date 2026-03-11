@@ -1,6 +1,5 @@
-import argparse
-import json
 import math
+import os
 import re
 import sys
 from collections import Counter, defaultdict
@@ -8,6 +7,12 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
+
+from tweet_interpretations import (
+    build_short_futures_interpretation,
+    build_short_options_interpretation,
+    build_short_vol_interpretation,
+)
 
 
 # ============================================================
@@ -368,120 +373,6 @@ def compute_risk_stats(
 # ============================================================
 # INTERPRETATION HELPERS
 # ============================================================
-
-def build_short_futures_interpretation(avg_risk: Optional[float], peak_risk: Optional[float]) -> str:
-    avg_risk = avg_risk or 0.0
-    peak_risk = peak_risk or 0.0
-
-    if avg_risk >= 0.90 or peak_risk >= 8:
-        return (
-            "Positioning pressure stayed broad enough\n"
-            "to suggest persistent crowding\n"
-            "rather than isolated bursts."
-        )
-
-    if avg_risk >= 0.60 or peak_risk >= 6:
-        return (
-            "Positioning pressure built repeatedly\n"
-            "across the week,\n"
-            "with stress showing more continuity\n"
-            "than usual."
-        )
-
-    if avg_risk >= 0.35 or peak_risk >= 5:
-        return (
-            "Positioning pressure appeared in bursts\n"
-            "rather than sustained build-up."
-        )
-
-    if avg_risk >= 0.20 or peak_risk >= 3:
-        return (
-            "Positioning stayed active,\n"
-            "but crowding remained localized\n"
-            "rather than regime-like."
-        )
-
-    return (
-        "Positioning pressure\n"
-        "remained mostly contained."
-    )
-
-
-def build_short_options_interpretation(
-    avg_mci: Optional[float],
-    avg_olsi: Optional[float],
-    mci_gt_06_share_pct: Optional[float] = None,
-) -> str:
-    avg_mci = avg_mci or 0.0
-    avg_olsi = avg_olsi or 0.0
-    compression_share = mci_gt_06_share_pct or 0.0
-    composite = max(avg_mci, avg_olsi)
-
-    if composite >= 0.40 or compression_share >= 18:
-        return (
-            "Options positioning showed structural pressure,\n"
-            "with compression appearing often enough\n"
-            "to matter."
-        )
-
-    if composite >= 0.30 or compression_share >= 10:
-        return (
-            "Options markets showed building pressure,\n"
-            "with directional expectations\n"
-            "becoming less neutral."
-        )
-
-    if composite >= 0.20:
-        return (
-            "Options markets stayed cautious\n"
-            "with limited directional conviction."
-        )
-
-    if composite >= 0.10:
-        return (
-            "Options positioning remained mostly balanced,\n"
-            "with only light signs of compression."
-        )
-
-    return (
-        "Options positioning\n"
-        "remained broadly neutral."
-    )
-
-
-def build_short_vol_interpretation(
-    overlap: Optional[float],
-    btc_vbi: Optional[float] = None,
-    eth_vbi: Optional[float] = None,
-) -> str:
-    overlap = overlap or 0.0
-    btc_vbi = btc_vbi or 0.0
-    eth_vbi = eth_vbi or 0.0
-    avg_vbi = (btc_vbi + eth_vbi) / 2 if (btc_vbi or eth_vbi) else 0.0
-
-    if overlap >= 40 or avg_vbi >= 26:
-        return (
-            "Volatility term structure stayed elevated\n"
-            "through a meaningful part of the week."
-        )
-
-    if overlap >= 20 or avg_vbi >= 20:
-        return (
-            "Volatility showed intermittent elevation\n"
-            "rather than a sustained expansion."
-        )
-
-    if overlap >= 10 or avg_vbi >= 15:
-        return (
-            "Volatility background showed brief pockets\n"
-            "of firmness,\n"
-            "but not a persistent stress regime."
-        )
-
-    return (
-        "Volatility background\n"
-        "stayed relatively calm."
-    )
 
 
 def build_synthesis_text(stats: Dict[str, Any]) -> str:
@@ -946,29 +837,153 @@ def build_thread_tweets(stats: Dict[str, Any]) -> List[str]:
 
 
 # ============================================================
-# FILE OUTPUT
+# SUPABASE SAVE (WEEKLY STATS)
 # ============================================================
 
-def save_outputs(stats: Dict[str, Any], tweets: List[str], prefix: str) -> None:
-    json_path = f"{prefix}.json"
-    thread_path = f"{prefix}_thread.txt"
+def save_weekly_stats_row(stats: Dict[str, Any], supabase_url: str, supabase_key: str) -> Dict[str, Any]:
+    payload = {
+        "from_utc": stats.get("from_utc"),
+        "to_utc": stats.get("to_utc"),
+        "window_days": stats.get("window_days"),
+        "rows_total": stats.get("rows_total"),
+        "event_counts": stats.get("event_counts", {}),
+        "risk_avg": stats.get("risk", {}).get("avg_risk"),
+        "risk_peak": stats.get("risk", {}).get("max_risk"),
+        "alerts_rows": stats.get("alerts", {}).get("rows"),
+        "bybit_avg_mci": stats.get("bybit", {}).get("avg_mci"),
+        "bybit_mci_gt_06_share_pct": stats.get("bybit", {}).get("mci_gt_06_share_pct"),
+        "okx_avg_olsi": stats.get("okx", {}).get("avg_olsi"),
+        "deribit_overlap_pct": stats.get("deribit", {}).get("both_hot_or_warm_share_pct"),
+        "stats": stats,
+    }
 
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(stats, f, ensure_ascii=False, indent=2)
+    response = requests.post(
+        f"{supabase_url}/rest/v1/weekly_stats",
+        headers={
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation",
+        },
+        json=payload,
+        timeout=REQUEST_TIMEOUT,
+    )
 
-    with open(thread_path, "w", encoding="utf-8") as f:
-        for i, tw in enumerate(tweets, start=1):
-            f.write(f"----- TWEET {i} | {len(tw)} chars -----\n")
-            f.write(tw + "\n\n")
+    if response.status_code not in (200, 201):
+        raise RuntimeError(f"Supabase weekly_stats insert failed: HTTP {response.status_code} | {response.text}")
 
-    for i, tw in enumerate(tweets, start=1):
-        path = f"{prefix}_tweet_{i}.txt"
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(tw + "\n")
-        print(f"[saved] {path} | {len(tw)} chars")
+    rows = response.json()
+    if not isinstance(rows, list) or not rows:
+        return {}
+    return rows[0]
 
-    print(f"[saved] {json_path}")
-    print(f"[saved] {thread_path}")
+
+# ============================================================
+# TWITTER THREAD POSTING
+# ============================================================
+
+TWITTER_POST_URL = "https://api.twitter.com/2/tweets"
+
+
+def _percent_encode(value: Any) -> str:
+    from urllib.parse import quote
+    return quote(str(value), safe="~")
+
+
+def _build_oauth_header(method: str, url: str, api_key: str, api_secret: str, access_token: str, access_token_secret: str) -> str:
+    import base64
+    import hashlib
+    import hmac
+    import secrets
+    import time
+
+    oauth_params = {
+        "oauth_consumer_key": api_key,
+        "oauth_nonce": secrets.token_hex(16),
+        "oauth_signature_method": "HMAC-SHA1",
+        "oauth_timestamp": str(int(time.time())),
+        "oauth_token": access_token,
+        "oauth_version": "1.0",
+    }
+
+    param_string = "&".join(
+        f"{_percent_encode(key)}={_percent_encode(value)}"
+        for key, value in sorted(oauth_params.items())
+    )
+
+    signature_base = "&".join([
+        method.upper(),
+        _percent_encode(url),
+        _percent_encode(param_string),
+    ])
+
+    signing_key = f"{_percent_encode(api_secret)}&{_percent_encode(access_token_secret)}"
+    digest = hmac.new(signing_key.encode(), signature_base.encode(), hashlib.sha1).digest()
+    oauth_params["oauth_signature"] = base64.b64encode(digest).decode()
+
+    header = ", ".join(
+        f'{_percent_encode(key)}="{_percent_encode(value)}"'
+        for key, value in sorted(oauth_params.items())
+    )
+    return f"OAuth {header}"
+
+
+def post_tweet(text: str, api_key: str, api_secret: str, access_token: str, access_token_secret: str, reply_to_tweet_id: Optional[str] = None) -> Dict[str, Any]:
+    auth_header = _build_oauth_header("POST", TWITTER_POST_URL, api_key, api_secret, access_token, access_token_secret)
+
+    payload: Dict[str, Any] = {"text": text}
+    if reply_to_tweet_id:
+        payload["reply"] = {"in_reply_to_tweet_id": reply_to_tweet_id}
+
+    response = requests.post(
+        TWITTER_POST_URL,
+        headers={"Authorization": auth_header, "Content-Type": "application/json"},
+        json=payload,
+        timeout=REQUEST_TIMEOUT,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f"Twitter post failed: HTTP {response.status_code} | {response.text}")
+    return response.json()
+
+
+def get_required_twitter_credentials() -> Dict[str, str]:
+    creds = {
+        "TWITTER_API_KEY": os.getenv("TWITTER_API_KEY"),
+        "TWITTER_API_SECRET": os.getenv("TWITTER_API_SECRET"),
+        "TWITTER_ACCESS_TOKEN": os.getenv("TWITTER_ACCESS_TOKEN"),
+        "TWITTER_ACCESS_TOKEN_SECRET": os.getenv("TWITTER_ACCESS_TOKEN_SECRET"),
+    }
+    missing = [name for name, value in creds.items() if not value]
+    if missing:
+        raise RuntimeError("Missing required Twitter credentials: " + ", ".join(missing))
+    return creds  # type: ignore[return-value]
+
+
+def post_thread_tweets(texts: List[str]) -> List[str]:
+    if not texts:
+        return []
+
+    creds = get_required_twitter_credentials()
+    tweet_ids: List[str] = []
+    previous_id: Optional[str] = None
+
+    for idx, text in enumerate(texts, start=1):
+        result = post_tweet(
+            text=text,
+            api_key=creds["TWITTER_API_KEY"],
+            api_secret=creds["TWITTER_API_SECRET"],
+            access_token=creds["TWITTER_ACCESS_TOKEN"],
+            access_token_secret=creds["TWITTER_ACCESS_TOKEN_SECRET"],
+            reply_to_tweet_id=previous_id,
+        )
+        tweet_id = str(result.get("data", {}).get("id", ""))
+        if not tweet_id:
+            raise RuntimeError(f"Twitter response has no tweet id for item {idx}: {result}")
+        tweet_ids.append(tweet_id)
+        previous_id = tweet_id
+        print(f"[twitter] tweet_{idx}_id={tweet_id}", flush=True)
+
+    return tweet_ids
 
 
 # ============================================================
@@ -976,19 +991,15 @@ def save_outputs(stats: Dict[str, Any], tweets: List[str], prefix: str) -> None:
 # ============================================================
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Weekly / Monthly stats from Supabase logs")
-    parser.add_argument("--window", type=int, choices=[7, 30], required=True, help="Days window: 7 or 30")
-    parser.add_argument("--page-size", type=int, default=PAGE_SIZE, help="Pagination page size")
-    parser.add_argument("--save-prefix", type=str, default=None, help="Prefix for output files")
-    args = parser.parse_args()
+    window_days = 7
 
     end_dt = now_utc()
-    start_dt = end_dt - timedelta(days=args.window)
+    start_dt = end_dt - timedelta(days=window_days)
 
     start_ts_ms = dt_to_unix_ms(start_dt)
     end_ts_ms = dt_to_unix_ms(end_dt)
 
-    print(f"[window] {args.window}d")
+    print(f"[window] {window_days}d")
     print(f"[from]   {start_dt.isoformat()}")
     print(f"[to]     {end_dt.isoformat()}")
 
@@ -997,7 +1008,7 @@ def main() -> None:
         supabase_key=SUPABASE_KEY,
         start_ts_ms=start_ts_ms,
         end_ts_ms=end_ts_ms,
-        page_size=args.page_size,
+        page_size=PAGE_SIZE,
     )
 
     rows = [normalize_row(r) for r in raw_rows]
@@ -1007,27 +1018,30 @@ def main() -> None:
 
     stats = compute_all_stats(
         rows=rows,
-        window_days=args.window,
+        window_days=window_days,
         start_dt=start_dt,
         end_dt=end_dt,
     )
 
     tweets = build_thread_tweets(stats)
 
-    print("\n" + "=" * 80)
-    print("JSON STATS")
-    print("=" * 80)
-    print(json.dumps(stats, ensure_ascii=False, indent=2))
+    print(f"[metrics] rows_total={stats['rows_total']}")
+    print(f"[metrics] avg_risk={stats['risk'].get('avg_risk')} peak_risk={stats['risk'].get('max_risk')}")
+    print(f"[metrics] bybit_avg_mci={stats['bybit'].get('avg_mci')} okx_avg_olsi={stats['okx'].get('avg_olsi')}")
+    print(f"[metrics] deribit_overlap_pct={stats['deribit'].get('both_hot_or_warm_share_pct')}")
+
+    saved = save_weekly_stats_row(stats=stats, supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY)
+    print(f"[supabase] weekly_stats row saved id={saved.get('id', 'n/a')}")
 
     print("\n" + "=" * 80)
-    print("THREAD DRAFT")
+    print("THREAD")
     print("=" * 80)
     for i, tw in enumerate(tweets, start=1):
         print(f"\n----- TWEET {i} | len={len(tw)} -----\n")
         print(tw)
 
-    prefix = args.save_prefix or f"livermore_{args.window}d_stats"
-    save_outputs(stats, tweets, prefix)
+    tweet_ids = post_thread_tweets(tweets)
+    print(f"[twitter] posted_thread_ids={tweet_ids}")
 
 
 if __name__ == "__main__":

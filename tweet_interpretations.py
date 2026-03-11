@@ -34,18 +34,18 @@ def build_short_futures_interpretation(avg_risk: Optional[float], peak_risk: Opt
     peak_risk = peak_risk or 0.0
 
     if avg_risk >= 0.90 or peak_risk >= 8:
-        return "Positioning pressure stayed broad enough to suggest persistent crowding rather than isolated bursts."
+        return "Futures positioning stayed under broad pressure, pointing to persistent crowding rather than a few isolated spikes."
 
     if avg_risk >= 0.60 or peak_risk >= 6:
-        return "Positioning pressure built repeatedly across the week, with stress showing more continuity than usual."
+        return "Crowding resurfaced repeatedly through the week, suggesting stress had more continuity than in a typical short-lived flare-up."
 
     if avg_risk >= 0.35 or peak_risk >= 5:
-        return "Positioning pressure appeared in bursts rather than sustained build-up."
+        return "Pressure emerged in visible bursts, though it never became a fully sustained market-wide build."
 
     if avg_risk >= 0.20 or peak_risk >= 3:
-        return "Positioning stayed active, but crowding remained localized rather than regime-like."
+        return "Positioning stayed active, but the pressure looked localized rather than broad enough to define the week."
 
-    return "Positioning pressure remained mostly contained."
+    return "Futures positioning remained relatively contained, with no broad crowding signal taking hold."
 
 
 def build_short_options_interpretation(
@@ -59,18 +59,18 @@ def build_short_options_interpretation(
     composite = max(avg_mci, avg_olsi)
 
     if composite >= 0.40 or compression_share >= 18:
-        return "Options positioning showed structural pressure, with compression appearing often enough to matter."
+        return "Options positioning carried clear structural tension, with compression appearing often enough to matter at the weekly horizon."
 
     if composite >= 0.30 or compression_share >= 10:
-        return "Options markets showed building pressure, with directional expectations becoming less neutral."
+        return "Options markets began to lean away from neutral, with pressure building in a way that deserves attention."
 
     if composite >= 0.20:
-        return "Options markets stayed cautious with limited directional conviction."
+        return "Options stayed cautious overall, but without strong enough conviction to frame the week as decisively directional."
 
     if composite >= 0.10:
-        return "Options positioning remained mostly balanced, with only light signs of compression."
+        return "Options positioning remained mostly balanced, with only light and occasional signs of compression."
 
-    return "Options positioning remained broadly neutral."
+    return "Options stayed broadly neutral, with little evidence of meaningful structural pressure."
 
 
 def build_short_vol_interpretation(
@@ -84,15 +84,15 @@ def build_short_vol_interpretation(
     avg_vbi = (btc_vbi + eth_vbi) / 2 if (btc_vbi or eth_vbi) else 0.0
 
     if overlap >= 40 or avg_vbi >= 26:
-        return "Volatility term structure stayed elevated through a meaningful part of the week."
+        return "Volatility term structure stayed elevated for a meaningful part of the week, which is hard to dismiss as background noise."
 
     if overlap >= 20 or avg_vbi >= 20:
-        return "Volatility showed intermittent elevation rather than a sustained expansion."
+        return "Volatility firmed up from time to time, though it never developed into a sustained expansion regime."
 
     if overlap >= 10 or avg_vbi >= 15:
-        return "Volatility background showed brief pockets of firmness, but not a persistent stress regime."
+        return "The volatility backdrop showed brief pockets of firmness, but not the kind of persistence usually seen in broader stress phases."
 
-    return "Volatility background stayed relatively calm."
+    return "The volatility backdrop stayed relatively calm, with little sign of sustained repricing pressure."
 
 
 def build_synthesis_text(stats: Dict[str, Any]) -> str:
@@ -112,22 +112,45 @@ def build_synthesis_text(stats: Dict[str, Any]) -> str:
     avg_vbi = (btc_vbi + eth_vbi) / 2
 
     if (avg_risk >= 0.55 and overlap >= 20) or (peak_risk >= 6 and avg_vbi >= 20):
-        return "Structural takeaway:\n\nPressure was not isolated.\n\nFutures crowding and volatility background aligned often enough to suggest unstable conditions rather than random noise."
+        return (
+            "Structural takeaway:\n\n"
+            "Pressure was not confined to one layer.\n\n"
+            "Futures crowding and the volatility backdrop lined up often enough to suggest unstable conditions rather than random short-term noise."
+        )
 
     if (avg_risk >= 0.35 or peak_risk >= 5) and max(avg_mci, avg_olsi) < 0.22 and overlap < 15:
-        return "Structural takeaway:\n\nFutures pressure appeared locally, but options expectations and volatility background did not confirm a broader unstable regime.\n\nThis looked more like selective crowding than system-wide stress."
+        return (
+            "Structural takeaway:\n\n"
+            "The pressure was more visible in futures than elsewhere.\n\n"
+            "Options and volatility did not confirm a broader unstable regime, which keeps this closer to selective crowding than to system-wide stress."
+        )
 
     if avg_risk < 0.30 and (avg_mci >= 0.28 or mci_gt_06 >= 10) and overlap < 20:
-        return "Structural takeaway:\n\nOptions markets carried more of the structural signal than futures positioning.\n\nCompression appeared without broad crowding, which is more consistent with latent pressure than with an already expanded move."
+        return (
+            "Structural takeaway:\n\n"
+            "Options carried more of the structural signal than futures this week.\n\n"
+            "Compression appeared without broad crowding, which fits latent pressure better than an already expanded move."
+        )
 
     if avg_risk < 0.30 and overlap >= 20:
-        return "Structural takeaway:\n\nVolatility background stayed firmer than futures positioning.\n\nThis suggests repricing in the background, without broad crowding across the market."
+        return (
+            "Structural takeaway:\n\n"
+            "The volatility backdrop stayed firmer than futures positioning.\n\n"
+            "That points to repricing in the background, without broad crowding spreading across the market."
+        )
 
     if avg_risk < 0.25 and max(avg_mci, avg_olsi) < 0.18 and overlap < 12:
-        return "Structural takeaway:\n\nSignals stayed relatively contained.\n\nPressure appeared selectively, but not as a clear regime shift across the system."
+        return (
+            "Structural takeaway:\n\n"
+            "The week stayed relatively contained.\n\n"
+            "Some local pressure appeared, but not in a way that suggests a broader regime shift."
+        )
 
-    return "Structural takeaway:\n\nSignals stayed mixed.\n\nPressure appeared selectively, not as a clear system-wide regime shift."
-
+    return (
+        "Structural takeaway:\n\n"
+        "The picture remained fragmented.\n\n"
+        "Pressure appeared in places, but the broader system never aligned strongly enough to confirm a clear market-wide shift."
+    )
 
 
 def build_thread_tweets(stats: Dict[str, Any]) -> List[str]:
@@ -153,10 +176,35 @@ def build_thread_tweets(stats: Dict[str, Any]) -> List[str]:
     vol_text = build_short_vol_interpretation(overlap, btc_vbi, eth_vbi)
 
     tweets = [
-        f"Livermore weekly snapshot ({window}d)\n\nSignals aggregated across:\n\n• futures positioning\n• options expectations\n• volatility background",
-        f"Futures layer (Binance)\n\nAvg risk: {rounded_str(avg_risk, 2)}\nPeak risk: {rounded_str(peak_risk, 1)}\n\nMain stress leaders:\n{top_stress}.\n\n{fut_text}",
-        f"Options expectations (Bybit / OKX)\n\nBybit MCI avg: {rounded_str(avg_mci, 2)}\nHigh-compression windows (>0.6): {rounded_str(mci_gt_06, 0)}%\n\nOKX avg OLSI: {rounded_str(avg_olsi, 2)}\n\n{opt_text}",
-        f"Volatility background (Deribit)\n\nBTC VBI avg: {rounded_str(btc_vbi, 1)}\nETH VBI avg: {rounded_str(eth_vbi, 1)}\n\nBTC/ETH warm overlap: {rounded_str(overlap, 0)}% of windows.\n\n{vol_text}",
+        (
+            f"Livermore weekly snapshot ({window}d)\n\n"
+            f"7-day structural view across:\n\n"
+            f"• futures positioning\n"
+            f"• options expectations\n"
+            f"• volatility background"
+        ),
+        (
+            f"Futures layer (Binance)\n\n"
+            f"Avg risk: {rounded_str(avg_risk, 2)}\n"
+            f"Peak risk: {rounded_str(peak_risk, 1)}\n\n"
+            f"Main stress leaders:\n"
+            f"{top_stress}.\n\n"
+            f"{fut_text}"
+        ),
+        (
+            f"Options expectations (Bybit / OKX)\n\n"
+            f"Bybit MCI avg: {rounded_str(avg_mci, 2)}\n"
+            f"High-compression windows (>0.6): {rounded_str(mci_gt_06, 0)}%\n\n"
+            f"OKX avg OLSI: {rounded_str(avg_olsi, 2)}\n\n"
+            f"{opt_text}"
+        ),
+        (
+            f"Volatility background (Deribit)\n\n"
+            f"BTC VBI avg: {rounded_str(btc_vbi, 1)}\n"
+            f"ETH VBI avg: {rounded_str(eth_vbi, 1)}\n\n"
+            f"BTC/ETH warm overlap: {rounded_str(overlap, 0)}% of windows.\n\n"
+            f"{vol_text}"
+        ),
         build_synthesis_text(stats),
     ]
     return [trim_tweet(t, max_len=260) for t in tweets]

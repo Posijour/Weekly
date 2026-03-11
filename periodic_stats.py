@@ -840,7 +840,17 @@ def build_thread_tweets(stats: Dict[str, Any]) -> List[str]:
 # SUPABASE SAVE (WEEKLY STATS)
 # ============================================================
 
-def save_weekly_stats_row(stats: Dict[str, Any], supabase_url: str, supabase_key: str) -> Dict[str, Any]:
+def save_weekly_stats_row(
+    stats: Dict[str, Any],
+    supabase_url: str,
+    supabase_key: str,
+    tweet_ids: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    period_start_iso = stats.get("from_utc")
+    period_end_iso = stats.get("to_utc")
+    period_label = f"{period_start_iso} -> {period_end_iso}" if period_start_iso and period_end_iso else None
+    tweet_ids = tweet_ids or []
+
     payload = {
         "period_start": period_start_iso,
         "period_end": period_end_iso,
@@ -874,9 +884,9 @@ def save_weekly_stats_row(stats: Dict[str, Any], supabase_url: str, supabase_key
         "deribit_btc_vbi": stats.get("deribit_btc_vbi"),
         "deribit_eth_vbi": stats.get("deribit_eth_vbi"),
     
-        "tweet_count": len(tweet_ids) if tweet_ids else 0,
+        "tweet_count": len(tweet_ids),
         "root_tweet_id": tweet_ids[0] if tweet_ids else None,
-        "tweet_ids": tweet_ids if tweet_ids else [],
+        "tweet_ids": tweet_ids,
         "raw_json": stats,
     }
 
@@ -1053,9 +1063,6 @@ def main() -> None:
     print(f"[metrics] bybit_avg_mci={stats['bybit'].get('avg_mci')} okx_avg_olsi={stats['okx'].get('avg_olsi')}")
     print(f"[metrics] deribit_overlap_pct={stats['deribit'].get('both_hot_or_warm_share_pct')}")
 
-    saved = save_weekly_stats_row(stats=stats, supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY)
-    print(f"[supabase] weekly_stats row saved id={saved.get('id', 'n/a')}")
-
     print("\n" + "=" * 80)
     print("THREAD")
     print("=" * 80)
@@ -1065,6 +1072,14 @@ def main() -> None:
 
     tweet_ids = post_thread_tweets(tweets)
     print(f"[twitter] posted_thread_ids={tweet_ids}")
+
+    saved = save_weekly_stats_row(
+        stats=stats,
+        supabase_url=SUPABASE_URL,
+        supabase_key=SUPABASE_KEY,
+        tweet_ids=tweet_ids,
+    )
+    print(f"[supabase] weekly_stats row saved id={saved.get('id', 'n/a')}")
 
 
 if __name__ == "__main__":
@@ -1076,4 +1091,3 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\nFATAL: {e}")
         sys.exit(1)
-

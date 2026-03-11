@@ -1,6 +1,5 @@
 import math
 import os
-import re
 import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timezone, timedelta
@@ -8,11 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
-from tweet_interpretations import (
-    build_short_futures_interpretation,
-    build_short_options_interpretation,
-    build_short_vol_interpretation,
-)
+from tweet_interpretations import build_thread_tweets
 
 
 # ============================================================
@@ -116,83 +111,6 @@ def ten_min_bucket_from_ms(ts_ms: int) -> str:
     dt = dt.replace(minute=minute, second=0, microsecond=0)
     return dt.isoformat()
 
-
-def trim_tweet(text: str, max_len: int = 280) -> str:
-    text = re.sub(r"[ \t]+", " ", text).strip()
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    if len(text) <= max_len:
-        return text
-    return text[: max_len - 1].rstrip() + "…"
-
-
-def pct_or_na(x: Any, digits: int = 1) -> str:
-    if x is None:
-        return "n/a"
-    try:
-        return f"{round(float(x), digits)}%"
-    except Exception:
-        return "n/a"
-
-
-def val_or_na(x: Any, digits: int = 2) -> str:
-    if x is None:
-        return "n/a"
-    try:
-        return str(round(float(x), digits))
-    except Exception:
-        return str(x)
-
-
-def format_top_symbols(items: List[Tuple[str, Any]], limit: int = 3) -> str:
-    if not items:
-        return "none"
-    cleaned = []
-    for k, _v in items[:limit]:
-        cleaned.append(str(k).replace("USDT", ""))
-    return ", ".join(cleaned)
-
-
-def format_top_types(items: List[Tuple[str, Any]], limit: int = 2) -> str:
-    if not items:
-        return "none"
-    out = []
-    for k, v in items[:limit]:
-        out.append(f"{k} ({v})")
-    return ", ".join(out)
-
-
-def next_full_hour(dt: datetime) -> datetime:
-    floored = dt.replace(minute=0, second=0, microsecond=0)
-    if dt == floored:
-        return floored
-    return floored + timedelta(hours=1)
-
-
-def current_full_hour(dt: datetime) -> datetime:
-    return dt.replace(minute=0, second=0, microsecond=0)
-
-
-def iso_hour_str(dt: datetime) -> str:
-    return dt.replace(minute=0, second=0, microsecond=0).isoformat()
-
-
-def clean_symbol(sym: str) -> str:
-    return str(sym).replace("USDT", "")
-
-
-def top_symbol_names(items: List[Tuple[str, Any]], limit: int = 3) -> str:
-    if not items:
-        return "none"
-    return ", ".join(clean_symbol(k) for k, _ in items[:limit])
-
-
-def rounded_str(x: Any, digits: int = 2) -> str:
-    if x is None:
-        return "n/a"
-    try:
-        return str(round(float(x), digits))
-    except Exception:
-        return str(x)
 
 
 # ============================================================
@@ -368,88 +286,6 @@ def compute_risk_stats(
         "top_symbols_by_risk_ge_2_share_pct": top_items(per_symbol_ge_2_share, n=5, round_digits=1),
         "top_symbols_by_risk_ge_3_share_pct": top_items(per_symbol_ge_3_share, n=5, round_digits=1),
     }
-
-
-# ============================================================
-# INTERPRETATION HELPERS
-# ============================================================
-
-
-def build_synthesis_text(stats: Dict[str, Any]) -> str:
-    risk = stats["risk"]
-    bybit = stats["bybit"]
-    okx = stats["okx"]
-    deribit = stats["deribit"]
-
-    avg_risk = risk.get("avg_risk") or 0.0
-    peak_risk = risk.get("max_risk") or 0.0
-    avg_mci = bybit.get("avg_mci") or 0.0
-    mci_gt_06 = bybit.get("mci_gt_06_share_pct") or 0.0
-    avg_olsi = okx.get("avg_olsi") or 0.0
-    overlap = deribit.get("both_hot_or_warm_share_pct") or 0.0
-    btc_vbi = deribit.get("symbols", {}).get("BTC", {}).get("avg_vbi_score") or 0.0
-    eth_vbi = deribit.get("symbols", {}).get("ETH", {}).get("avg_vbi_score") or 0.0
-    avg_vbi = mean([btc_vbi, eth_vbi]) or 0.0
-
-    # 1) Confirmed unstable regime
-    if (avg_risk >= 0.55 and overlap >= 20) or (peak_risk >= 6 and avg_vbi >= 20):
-        return (
-            "Structural takeaway:\n\n"
-            "Pressure was not isolated.\n\n"
-            "Futures crowding and volatility background\n"
-            "aligned often enough to suggest\n"
-            "unstable conditions\n"
-            "rather than random noise."
-        )
-
-    # 2) Futures pressure not confirmed by other layers
-    if (avg_risk >= 0.35 or peak_risk >= 5) and max(avg_mci, avg_olsi) < 0.22 and overlap < 15:
-        return (
-            "Structural takeaway:\n\n"
-            "Futures pressure appeared locally,\n"
-            "but options expectations and volatility background\n"
-            "did not confirm a broader unstable regime.\n\n"
-            "This looked more like selective crowding\n"
-            "than system-wide stress."
-        )
-
-    # 3) Options compression ahead of futures
-    if avg_risk < 0.30 and (avg_mci >= 0.28 or mci_gt_06 >= 10) and overlap < 20:
-        return (
-            "Structural takeaway:\n\n"
-            "Options markets carried more of the structural signal\n"
-            "than futures positioning.\n\n"
-            "Compression appeared without broad crowding,\n"
-            "which is more consistent with latent pressure\n"
-            "than with an already expanded move."
-        )
-
-    # 4) Volatility elevated without crowding
-    if avg_risk < 0.30 and overlap >= 20:
-        return (
-            "Structural takeaway:\n\n"
-            "Volatility background stayed firmer\n"
-            "than futures positioning.\n\n"
-            "This suggests repricing in the background,\n"
-            "without broad crowding across the market."
-        )
-
-    # 5) Calm / mixed
-    if avg_risk < 0.25 and max(avg_mci, avg_olsi) < 0.18 and overlap < 12:
-        return (
-            "Structural takeaway:\n\n"
-            "Signals stayed relatively contained.\n\n"
-            "Pressure appeared selectively,\n"
-            "but not as a clear regime shift\n"
-            "across the system."
-        )
-
-    return (
-        "Structural takeaway:\n\n"
-        "Signals stayed mixed.\n\n"
-        "Pressure appeared selectively,\n"
-        "not as a clear system-wide regime shift."
-    )
 
 
 # ============================================================
@@ -754,86 +590,6 @@ def compute_all_stats(
         "okx": compute_okx_stats(rows),
         "deribit": compute_deribit_stats(rows),
     }
-
-
-# ============================================================
-# SYNTHESIS
-# ============================================================
-
-def infer_market_takeaway(stats: Dict[str, Any]) -> str:
-    return build_synthesis_text(stats)
-
-
-# ============================================================
-# THREAD GENERATION
-# ============================================================
-
-def build_thread_tweets(stats: Dict[str, Any]) -> List[str]:
-    window = stats["window_days"]
-    risk = stats["risk"]
-    bybit = stats["bybit"]
-    okx = stats["okx"]
-    deribit = stats["deribit"]
-
-    # 1) Intro
-    tweet1 = (
-        f"Livermore weekly snapshot ({window}d)\n\n"
-        f"Signals aggregated across:\n\n"
-        f"• futures positioning\n"
-        f"• options expectations\n"
-        f"• volatility background"
-    )
-
-    # 2) Futures
-    avg_risk = risk.get("avg_risk")
-    peak_risk = risk.get("max_risk")
-    top_stress = top_symbol_names(risk.get("top_symbols_by_avg_risk", []), limit=3)
-    fut_text = build_short_futures_interpretation(avg_risk, peak_risk)
-
-    tweet2 = (
-        f"Futures layer (Binance)\n\n"
-        f"Avg risk: {rounded_str(avg_risk, 2)}\n"
-        f"Peak risk: {rounded_str(peak_risk, 1)}\n\n"
-        f"Main stress leaders:\n"
-        f"{top_stress}.\n\n"
-        f"{fut_text}"
-    )
-
-    # 3) Options
-    avg_mci = bybit.get("avg_mci")
-    mci_gt_06 = bybit.get("mci_gt_06_share_pct")
-    avg_olsi = okx.get("avg_olsi")
-    opt_text = build_short_options_interpretation(avg_mci, avg_olsi, mci_gt_06)
-
-    tweet3 = (
-        f"Options expectations (Bybit / OKX)\n\n"
-        f"Bybit MCI avg: {rounded_str(avg_mci, 2)}\n"
-        f"High-compression windows (>0.6): {rounded_str(mci_gt_06, 0)}%\n\n"
-        f"OKX avg OLSI: {rounded_str(avg_olsi, 2)}\n\n"
-        f"{opt_text}"
-    )
-
-    # 4) Volatility
-    btc_vbi = deribit.get("symbols", {}).get("BTC", {}).get("avg_vbi_score")
-    eth_vbi = deribit.get("symbols", {}).get("ETH", {}).get("avg_vbi_score")
-    overlap = deribit.get("both_hot_or_warm_share_pct")
-    vol_text = build_short_vol_interpretation(overlap, btc_vbi, eth_vbi)
-
-    tweet4 = (
-        f"Volatility background (Deribit)\n\n"
-        f"BTC VBI avg: {rounded_str(btc_vbi, 1)}\n"
-        f"ETH VBI avg: {rounded_str(eth_vbi, 1)}\n\n"
-        f"BTC/ETH warm overlap:\n"
-        f"{rounded_str(overlap, 0)}% of windows.\n\n"
-        f"{vol_text}"
-    )
-
-    # 5) Synthesis
-    tweet5 = build_synthesis_text(stats)
-
-    tweets = [tweet1, tweet2, tweet3, tweet4, tweet5]
-    tweets = [trim_tweet(t, max_len=260) for t in tweets]
-    return tweets
 
 
 # ============================================================

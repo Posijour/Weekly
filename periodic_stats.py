@@ -842,19 +842,42 @@ def build_thread_tweets(stats: Dict[str, Any]) -> List[str]:
 
 def save_weekly_stats_row(stats: Dict[str, Any], supabase_url: str, supabase_key: str) -> Dict[str, Any]:
     payload = {
-        "from_utc": stats.get("from_utc"),
-        "to_utc": stats.get("to_utc"),
-        "window_days": stats.get("window_days"),
-        "rows_total": stats.get("rows_total"),
-        "event_counts": stats.get("event_counts", {}),
-        "risk_avg": stats.get("risk", {}).get("avg_risk"),
-        "risk_peak": stats.get("risk", {}).get("max_risk"),
-        "alerts_rows": stats.get("alerts", {}).get("rows"),
-        "bybit_avg_mci": stats.get("bybit", {}).get("avg_mci"),
-        "bybit_mci_gt_06_share_pct": stats.get("bybit", {}).get("mci_gt_06_share_pct"),
-        "okx_avg_olsi": stats.get("okx", {}).get("avg_olsi"),
-        "deribit_overlap_pct": stats.get("deribit", {}).get("both_hot_or_warm_share_pct"),
-        "stats": stats,
+        "period_start": period_start_iso,
+        "period_end": period_end_iso,
+        "period_label": period_label,
+        "run_status": "success",
+        "source_job": "render-cron-weekly-stats",
+    
+        "avg_risk": stats.get("avg_risk"),
+        "median_risk": stats.get("median_risk"),
+        "max_risk": stats.get("max_risk"),
+    
+        "market_high_risk_ge2": stats.get("market_high_risk_hours", {}).get("risk_ge_2"),
+        "market_high_risk_ge3": stats.get("market_high_risk_hours", {}).get("risk_ge_3"),
+        "market_high_risk_ge4": stats.get("market_high_risk_hours", {}).get("risk_ge_4"),
+        "market_high_risk_ge5": stats.get("market_high_risk_hours", {}).get("risk_ge_5"),
+    
+        "symbol_high_risk_ge2": stats.get("symbol_high_risk_hours", {}).get("risk_ge_2"),
+        "symbol_high_risk_ge3": stats.get("symbol_high_risk_hours", {}).get("risk_ge_3"),
+        "symbol_high_risk_ge4": stats.get("symbol_high_risk_hours", {}).get("risk_ge_4"),
+        "symbol_high_risk_ge5": stats.get("symbol_high_risk_hours", {}).get("risk_ge_5"),
+    
+        "alerts_rows": stats.get("alerts_rows"),
+    
+        "bybit_avg_mci": stats.get("bybit_avg_mci"),
+        "bybit_regime_calm_pct": stats.get("bybit_regime_calm_pct"),
+        "bybit_regime_uncertain_pct": stats.get("bybit_regime_uncertain_pct"),
+    
+        "okx_avg_olsi": stats.get("okx_avg_olsi"),
+        "okx_divergence_calm_dominant": stats.get("okx_divergence_calm_dominant"),
+    
+        "deribit_btc_vbi": stats.get("deribit_btc_vbi"),
+        "deribit_eth_vbi": stats.get("deribit_eth_vbi"),
+    
+        "tweet_count": len(tweet_ids) if tweet_ids else 0,
+        "root_tweet_id": tweet_ids[0] if tweet_ids else None,
+        "tweet_ids": tweet_ids if tweet_ids else [],
+        "raw_json": stats,
     }
 
     response = requests.post(
@@ -1053,3 +1076,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\nFATAL: {e}")
         sys.exit(1)
+

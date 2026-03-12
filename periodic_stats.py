@@ -24,6 +24,112 @@ REQUEST_TIMEOUT = 30
 
 DERIBIT_EVENT_NAMES = {"deribit_vbi_snapshot", "deribit_vbi_snasphot"}
 
+EXPECTED_TWEET_COUNT = 5
+TWEET_MAX_LEN = 260
+MAX_NA_PER_TWEET = 6
+
+
+def fetch_existing_weekly_row(
+    supabase_url: str,
+    supabase_key: str,
+    period_start_iso: str,
+    period_end_iso: str,
+) -> Optional[Dict[str, Any]]:
+    response = requests.get(
+        f"{supabase_url}/rest/v1/weekly_stats",
+        headers={
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Accept": "application/json",
+        },
+        params={
+            "select": "id,period_start,period_end,root_tweet_id,tweet_count",
+            "period_start": f"eq.{period_start_iso}",
+            "period_end": f"eq.{period_end_iso}",
+            "order": "id.desc",
+            "limit": 1,
+        },
+        timeout=REQUEST_TIMEOUT,
+    )
+    if response.status_code != 200:
+        raise RuntimeError(f"Supabase weekly_stats precheck failed: HTTP {response.status_code} | {response.text}")
+
+    rows = response.json()
+    if isinstance(rows, list) and rows:
+        return rows[0]
+    return None
+
+
+def should_skip_twitter_post(existing_row: Optional[Dict[str, Any]]) -> bool:
+    if not existing_row:
+        return False
+    root_tweet_id = existing_row.get("root_tweet_id")
+    tweet_count = safe_int(existing_row.get("tweet_count"), default=0) or 0
+    return bool(root_tweet_id) or tweet_count > 0
+
+
+def validate_thread_tweets(texts: List[str], expected_count: int = EXPECTED_TWEET_COUNT, max_len: int = TWEET_MAX_LEN) -> Tuple[bool, List[str]]:
+    errors: List[str] = []
+
+    if len(texts) != expected_count:
+        errors.append(f"unexpected_tweet_count={len(texts)} expected={expected_count}")
+
+    for idx, tweet in enumerate(texts, start=1):
+        if not isinstance(tweet, str):
+            errors.append(f"tweet_{idx}_not_string")
+            continue
+
+        stripped = tweet.strip()
+        if not stripped:
+            errors.append(f"tweet_{idx}_empty")
+            continue
+
+        if len(tweet) > max_len:
+            errors.append(f"tweet_{idx}_too_long={len(tweet)}")
+
+        lowered = stripped.lower()
+        if "none." in lowered or lowered == "none":
+            errors.append(f"tweet_{idx}_contains_none")
+
+        na_count = lowered.count("n/a")
+        if na_count > MAX_NA_PER_TWEET:
+            errors.append(f"tweet_{idx}_too_many_na={na_count}")
+
+    return (len(errors) == 0, errors)
+
+
+def update_weekly_stats_twitter_fields(
+    row_id: Any,
+    tweet_ids: List[str],
+    supabase_url: str,
+    supabase_key: str,
+) -> Dict[str, Any]:
+    response = requests.patch(
+        f"{supabase_url}/rest/v1/weekly_stats",
+        headers={
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation",
+        },
+        params={"id": f"eq.{row_id}"},
+        json={
+            "tweet_count": len(tweet_ids),
+            "root_tweet_id": tweet_ids[0] if tweet_ids else None,
+            "tweet_ids": tweet_ids,
+        },
+        timeout=REQUEST_TIMEOUT,
+    )
+
+    if response.status_code not in (200, 204):
+        raise RuntimeError(f"Supabase weekly_stats patch failed: HTTP {response.status_code} | {response.text}")
+
+    rows = response.json() if response.text else []
+    if isinstance(rows, list) and rows:
+        return rows[0]
+    return {}
+
+
 
 # ============================================================
 # HELPERS
@@ -819,10 +925,10 @@ def main() -> None:
 
     tweets = build_thread_tweets(stats)
 
-    print(f"[metrics] rows_total={stats['rows_total']}")
-    print(f"[metrics] avg_risk={stats['risk'].get('avg_risk')} peak_risk={stats['risk'].get('max_risk')}")
-    print(f"[metrics] bybit_avg_mci={stats['bybit'].get('avg_mci')} okx_avg_olsi={stats['okx'].get('avg_olsi')}")
-    print(f"[metrics] deribit_overlap_pct={stats['deribit'].get('both_hot_or_warm_share_pct')}")
+    print(f"[metrics] rows_total={stats.get('rows_total')}")
+    print(f"[metrics] avg_risk={(stats.get('risk') or {}).get('avg_risk')} peak_risk={(stats.get('risk') or {}).get('max_risk')}")
+    print(f"[metrics] bybit_avg_mci={(stats.get('bybit') or {}).get('avg_mci')} okx_avg_olsi={(stats.get('okx') or {}).get('avg_olsi')}")
+    print(f"[metrics] deribit_overlap_pct={(stats.get('deribit') or {}).get('both_hot_or_warm_share_pct')}")
 
     print("\n" + "=" * 80)
     print("THREAD")
@@ -831,16 +937,50 @@ def main() -> None:
         print(f"\n----- TWEET {i} | len={len(tw)} -----\n")
         print(tw)
 
-    tweet_ids = post_thread_tweets(tweets)
-    print(f"[twitter] posted_thread_ids={tweet_ids}")
+    period_start_iso = stats.get("from_utc")
+    period_end_iso = stats.get("to_utc")
+    existing_row = None
+    if period_start_iso and period_end_iso:
+        existing_row = fetch_existing_weekly_row(
+            supabase_url=SUPABASE_URL,
+            supabase_key=SUPABASE_KEY,
+            period_start_iso=period_start_iso,
+            period_end_iso=period_end_iso,
+        )
 
-    saved = save_weekly_stats_row(
+    if should_skip_twitter_post(existing_row):
+        print("Twitter thread already posted for this period, skipping", flush=True)
+        return
+
+    saved = existing_row or save_weekly_stats_row(
         stats=stats,
         supabase_url=SUPABASE_URL,
         supabase_key=SUPABASE_KEY,
-        tweet_ids=tweet_ids,
+        tweet_ids=[],
     )
     print(f"[supabase] weekly_stats row saved id={saved.get('id', 'n/a')}")
+
+    is_valid, validation_errors = validate_thread_tweets(tweets)
+    if not is_valid:
+        print(f"[thread validation] failed: {validation_errors}", flush=True)
+        raise RuntimeError("Thread validation failed, skipping Twitter posting")
+
+    try:
+        tweet_ids = post_thread_tweets(tweets)
+        print(f"[twitter] posted_thread_ids={tweet_ids}")
+    except Exception as twitter_error:
+        print(f"[twitter] failed after weekly_stats save: {twitter_error}", flush=True)
+        raise
+
+    saved_id = saved.get("id") if isinstance(saved, dict) else None
+    if saved_id:
+        updated = update_weekly_stats_twitter_fields(
+            row_id=saved_id,
+            tweet_ids=tweet_ids,
+            supabase_url=SUPABASE_URL,
+            supabase_key=SUPABASE_KEY,
+        )
+        print(f"[supabase] weekly_stats twitter fields updated id={updated.get('id', saved_id)}")
 
 
 if __name__ == "__main__":
@@ -852,4 +992,3 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\nFATAL: {e}")
         sys.exit(1)
-

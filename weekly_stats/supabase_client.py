@@ -5,6 +5,20 @@ import requests
 from weekly_stats.config import REQUEST_TIMEOUT, TABLE_NAME
 
 
+def bool_to_int(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower().strip('"')
+        if normalized in {"true", "t", "1", "yes"}:
+            return 1
+        if normalized in {"false", "f", "0", "no"}:
+            return 0
+    return None
+
+
 def fetch_existing_weekly_row(supabase_url: str, supabase_key: str, period_start_iso: str, period_end_iso: str) -> Optional[Dict[str, Any]]:
     response = requests.get(
         f"{supabase_url}/rest/v1/weekly_stats",
@@ -111,7 +125,7 @@ def save_weekly_stats_row(stats: Dict[str, Any], supabase_url: str, supabase_key
         "bybit_regime_calm_pct": bybit_stats.get("regime_calm_pct"),
         "bybit_regime_uncertain_pct": bybit_stats.get("regime_uncertain_pct"),
         "okx_avg_olsi": okx_stats.get("avg_olsi"),
-        "okx_divergence_calm_dominant": okx_stats.get("divergence_calm_dominant"),
+        "okx_divergence_calm_dominant": bool_to_int(okx_stats.get("divergence_calm_dominant")),
         "deribit_btc_vbi": deribit_stats.get("btc_vbi"),
         "deribit_eth_vbi": deribit_stats.get("eth_vbi"),
         "tweet_count": len(tweet_ids),

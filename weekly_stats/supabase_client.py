@@ -92,7 +92,13 @@ def fetch_logs_paginated(supabase_url: str, supabase_key: str, start_ts_ms: int,
     return all_rows
 
 
-def save_weekly_stats_row(stats: Dict[str, Any], supabase_url: str, supabase_key: str, tweet_ids: Optional[List[str]] = None) -> Dict[str, Any]:
+def save_weekly_stats_row(
+    stats: Dict[str, Any],
+    supabase_url: str,
+    supabase_key: str,
+    tweet_ids: Optional[List[str]] = None,
+    run_status: str = "success",
+) -> Dict[str, Any]:
     period_start_iso = stats.get("from_utc")
     period_end_iso = stats.get("to_utc")
     period_label = f"{period_start_iso} -> {period_end_iso}" if period_start_iso and period_end_iso else None
@@ -107,7 +113,7 @@ def save_weekly_stats_row(stats: Dict[str, Any], supabase_url: str, supabase_key
         "period_start": period_start_iso,
         "period_end": period_end_iso,
         "period_label": period_label,
-        "run_status": "success",
+        "run_status": run_status,
         "source_job": "render-cron-weekly-stats",
         "avg_risk": risk_stats.get("avg_risk"),
         "median_risk": risk_stats.get("median_risk"),
@@ -155,7 +161,13 @@ def save_weekly_stats_row(stats: Dict[str, Any], supabase_url: str, supabase_key
     return rows[0]
 
 
-def update_weekly_stats_twitter_fields(row_id: Any, tweet_ids: List[str], supabase_url: str, supabase_key: str) -> Dict[str, Any]:
+def update_weekly_stats_twitter_fields(
+    row_id: Any,
+    tweet_ids: List[str],
+    supabase_url: str,
+    supabase_key: str,
+    run_status: Optional[str] = None,
+) -> Dict[str, Any]:
     response = requests.patch(
         f"{supabase_url}/rest/v1/weekly_stats",
         headers={
@@ -169,6 +181,7 @@ def update_weekly_stats_twitter_fields(row_id: Any, tweet_ids: List[str], supaba
             "tweet_count": len(tweet_ids),
             "root_tweet_id": tweet_ids[0] if tweet_ids else None,
             "tweet_ids": tweet_ids,
+            **({"run_status": run_status} if run_status is not None else {}),
         },
         timeout=REQUEST_TIMEOUT,
     )

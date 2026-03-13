@@ -24,7 +24,7 @@ def should_skip_twitter_post(existing_row: Optional[Dict[str, Any]]) -> bool:
 
 
 def run_weekly_job(window_days: int = 7) -> List[str]:
-    end_dt = now_utc()
+    end_dt = now_utc().replace(hour=0, minute=0, second=0, microsecond=0)
     start_dt = end_dt - timedelta(days=window_days)
 
     start_ts_ms = dt_to_unix_ms(start_dt)
@@ -77,11 +77,26 @@ def run_weekly_job(window_days: int = 7) -> List[str]:
         print("Twitter thread already posted for this period, skipping", flush=True)
         return []
 
-    saved = existing_row or save_weekly_stats_row(stats=stats, supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY, tweet_ids=[])
+    saved = existing_row or save_weekly_stats_row(
+        stats=stats,
+        supabase_url=SUPABASE_URL,
+        supabase_key=SUPABASE_KEY,
+        tweet_ids=[],
+        run_status="pending",
+    )
     print(f"[supabase] weekly_stats row saved id={saved.get('id', 'n/a')}")
 
     is_valid, validation_errors = validate_thread_tweets(tweets)
     if not is_valid:
+        saved_id = saved.get("id") if isinstance(saved, dict) else None
+        if saved_id:
+            update_weekly_stats_twitter_fields(
+                row_id=saved_id,
+                tweet_ids=[],
+                run_status="failed",
+                supabase_url=SUPABASE_URL,
+                supabase_key=SUPABASE_KEY,
+            )
         print(f"[thread validation] failed: {validation_errors}", flush=True)
         raise RuntimeError("Thread validation failed, skipping Twitter posting")
 
@@ -89,6 +104,15 @@ def run_weekly_job(window_days: int = 7) -> List[str]:
         tweet_ids = post_thread_tweets(tweets)
         print(f"[twitter] posted_thread_ids={tweet_ids}")
     except Exception as twitter_error:
+        saved_id = saved.get("id") if isinstance(saved, dict) else None
+        if saved_id:
+            update_weekly_stats_twitter_fields(
+                row_id=saved_id,
+                tweet_ids=[],
+                run_status="failed",
+                supabase_url=SUPABASE_URL,
+                supabase_key=SUPABASE_KEY,
+            )
         print(f"[twitter] failed after weekly_stats save: {twitter_error}", flush=True)
         raise
 
@@ -97,6 +121,7 @@ def run_weekly_job(window_days: int = 7) -> List[str]:
         updated = update_weekly_stats_twitter_fields(
             row_id=saved_id,
             tweet_ids=tweet_ids,
+            run_status="success",
             supabase_url=SUPABASE_URL,
             supabase_key=SUPABASE_KEY,
         )

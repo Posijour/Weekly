@@ -13,7 +13,7 @@ from weekly_stats.supabase_client import (
     update_weekly_stats_twitter_fields,
 )
 from weekly_stats.telegram_client import send_telegram_message
-from weekly_stats.telegram_text import build_weekly_telegram_post
+from weekly_stats.telegram_text import build_weekly_telegram_interpretation
 from weekly_stats.twitter_client import post_thread_tweets, validate_thread_tweets
 from weekly_stats.utils import dt_to_unix_ms, now_utc, safe_int
 

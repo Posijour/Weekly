@@ -9,8 +9,11 @@ from weekly_stats.supabase_client import (
     fetch_existing_weekly_row,
     fetch_logs_paginated,
     save_weekly_stats_row,
+    update_weekly_stats_telegram_fields,
     update_weekly_stats_twitter_fields,
 )
+from weekly_stats.telegram_client import send_telegram_message
+from weekly_stats.telegram_text import build_weekly_telegram_post
 from weekly_stats.twitter_client import post_thread_tweets, validate_thread_tweets
 from weekly_stats.utils import dt_to_unix_ms, now_utc, safe_int
 
@@ -126,6 +129,38 @@ def run_weekly_job(window_days: int = 7) -> List[str]:
             supabase_key=SUPABASE_KEY,
         )
         print(f"[supabase] weekly_stats twitter fields updated id={updated.get('id', saved_id)}")
+
+    telegram_text = build_weekly_telegram_post(stats=stats, tweets=tweets)
+    try:
+        telegram_response = send_telegram_message(telegram_text)
+        message_id = str((telegram_response.get("result") or {}).get("message_id") or "") or None
+        print(f"[telegram] posted_message_id={message_id}")
+
+        if saved_id:
+            updated = update_weekly_stats_telegram_fields(
+                row_id=saved_id,
+                telegram_posted=True,
+                telegram_message_id=message_id,
+                telegram_post_text=telegram_text,
+                telegram_posted_at=now_utc().isoformat(),
+                supabase_url=SUPABASE_URL,
+                supabase_key=SUPABASE_KEY,
+            )
+            print(f"[supabase] weekly_stats telegram fields updated id={updated.get('id', saved_id)}")
+    except Exception as telegram_error:
+        print(f"[telegram] failed after twitter success: {telegram_error}", flush=True)
+        if saved_id:
+            try:
+                update_weekly_stats_telegram_fields(
+                    row_id=saved_id,
+                    telegram_posted=False,
+                    telegram_message_id=None,
+                    supabase_url=SUPABASE_URL,
+                    supabase_key=SUPABASE_KEY,
+                )
+                print(f"[supabase] weekly_stats telegram failure marker updated id={saved_id}")
+            except Exception as supabase_telegram_error:
+                print(f"[supabase] telegram patch failed id={saved_id}: {supabase_telegram_error}", flush=True)
 
     return tweet_ids
 

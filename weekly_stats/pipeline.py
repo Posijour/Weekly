@@ -130,7 +130,7 @@ def run_weekly_job(window_days: int = 7) -> List[str]:
         )
         print(f"[supabase] weekly_stats twitter fields updated id={updated.get('id', saved_id)}")
 
-    telegram_text = build_weekly_telegram_post(stats=stats, tweets=tweets)
+    telegram_text = build_weekly_telegram_interpretation(stats=stats)
     try:
         telegram_response = send_telegram_message(telegram_text)
         message_id = str((telegram_response.get("result") or {}).get("message_id") or "") or None
@@ -148,7 +148,7 @@ def run_weekly_job(window_days: int = 7) -> List[str]:
             )
             print(f"[supabase] weekly_stats telegram fields updated id={updated.get('id', saved_id)}")
     except Exception as telegram_error:
-        print(f"[telegram] failed after twitter success: {telegram_error}", flush=True)
+        print(f"[telegram][warning] failed after twitter success: {telegram_error}", flush=True)
         if saved_id:
             try:
                 update_weekly_stats_telegram_fields(

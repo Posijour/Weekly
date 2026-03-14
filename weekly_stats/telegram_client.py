@@ -30,6 +30,7 @@ def send_telegram_message(text: str) -> Dict[str, Any]:
             "chat_id": creds["TELEGRAM_CHAT_ID"],
             "text": text,
             "disable_web_page_preview": True,
+            "parse_mode": "HTML",
         },
         timeout=REQUEST_TIMEOUT,
     )

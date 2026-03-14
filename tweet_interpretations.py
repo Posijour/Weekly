@@ -272,19 +272,17 @@ def build_thread_tweets(stats: Dict[str, Any]) -> List[str]:
 
     avg_risk = risk.get("avg_risk")
     peak_risk = risk.get("max_risk")
-    top_stress = top_symbol_names(risk.get("top_symbols_by_avg_risk", []), limit=3)
-    fut_text = build_short_futures_interpretation(avg_risk, peak_risk)
+    top_stress = top_symbol_names(
+        risk.get("top_symbols_by_risk_ge_3_share_pct", []) or risk.get("top_symbols_by_avg_risk", []),
+        limit=3,
+    )
 
     avg_mci = bybit.get("avg_mci")
     mci_gt_06 = bybit.get("mci_gt_06_share_pct")
     avg_olsi = okx.get("avg_olsi")
-    opt_text = build_short_options_interpretation(avg_mci, avg_olsi, mci_gt_06)
-
     btc_vbi = deribit.get("symbols", {}).get("BTC", {}).get("avg_vbi_score")
     eth_vbi = deribit.get("symbols", {}).get("ETH", {}).get("avg_vbi_score")
     overlap = deribit.get("both_hot_or_warm_share_pct")
-    vol_text = build_short_vol_interpretation(overlap, btc_vbi, eth_vbi)
-
     tweets = [
         (
             pick_variant(INTRO_VARIANTS).format(window=window)
@@ -294,22 +292,19 @@ def build_thread_tweets(stats: Dict[str, Any]) -> List[str]:
             f"Avg risk: {rounded_str(avg_risk, 2)}\n"
             f"Peak risk: {rounded_str(peak_risk, 1)}\n\n"
             f"Main stress leaders:\n"
-            f"{top_stress}.\n\n"
-            f"{fut_text}"
+            f"{top_stress}."
         ),
         (
             f"Options expectations (Bybit / OKX)\n\n"
             f"Bybit MCI avg: {rounded_str(avg_mci, 2)}\n"
             f"High-compression windows (>0.6): {rounded_str(mci_gt_06, 0)}%\n\n"
-            f"OKX avg OLSI: {rounded_str(avg_olsi, 2)}\n\n"
-            f"{opt_text}"
+            f"OKX avg OLSI: {rounded_str(avg_olsi, 2)}"
         ),
         (
             f"Volatility background (Deribit)\n\n"
             f"BTC VBI avg: {rounded_str(btc_vbi, 1)}\n"
             f"ETH VBI avg: {rounded_str(eth_vbi, 1)}\n\n"
-            f"BTC/ETH warm overlap: {rounded_str(overlap, 0)}% of windows.\n\n"
-            f"{vol_text}"
+            f"BTC/ETH warm overlap: {rounded_str(overlap, 0)}% of windows."
         ),
         build_synthesis_text(stats),
     ]

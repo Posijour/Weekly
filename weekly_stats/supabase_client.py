@@ -193,3 +193,43 @@ def update_weekly_stats_twitter_fields(
     if isinstance(rows, list) and rows:
         return rows[0]
     return {}
+
+
+def update_weekly_stats_telegram_fields(
+    row_id: Any,
+    telegram_posted: bool,
+    supabase_url: str,
+    supabase_key: str,
+    telegram_message_id: Optional[str] = None,
+    telegram_post_text: Optional[str] = None,
+    telegram_posted_at: Optional[str] = None,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "telegram_posted": bool_to_int(telegram_posted),
+        "telegram_message_id": telegram_message_id,
+    }
+    if telegram_post_text is not None:
+        payload["telegram_post_text"] = telegram_post_text
+    if telegram_posted_at is not None:
+        payload["telegram_posted_at"] = telegram_posted_at
+
+    response = requests.patch(
+        f"{supabase_url}/rest/v1/weekly_stats",
+        headers={
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation",
+        },
+        params={"id": f"eq.{row_id}"},
+        json=payload,
+        timeout=REQUEST_TIMEOUT,
+    )
+
+    if response.status_code not in (200, 204):
+        raise RuntimeError(f"Supabase weekly_stats telegram patch failed: HTTP {response.status_code} | {response.text}")
+
+    rows = response.json() if response.text else []
+    if isinstance(rows, list) and rows:
+        return rows[0]
+    return {}

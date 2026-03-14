@@ -1,9 +1,19 @@
 import os
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
 from weekly_stats.config import EXPECTED_TWEET_COUNT, MAX_NA_PER_TWEET, REQUEST_TIMEOUT, TWEET_MAX_LEN, TWITTER_POST_URL
+
+
+def is_twitter_autopost_stub_enabled() -> bool:
+    return os.getenv("TWITTER_AUTOPOST_STUB", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _build_stub_tweet_id(index: int) -> str:
+    ts = int(datetime.now(timezone.utc).timestamp())
+    return f"stub-{ts}-{index}"
 
 
 def validate_thread_tweets(texts: List[str], expected_count: int = EXPECTED_TWEET_COUNT, max_len: int = TWEET_MAX_LEN) -> Tuple[bool, List[str]]:
@@ -108,6 +118,14 @@ def get_required_twitter_credentials() -> Dict[str, str]:
 def post_thread_tweets(texts: List[str]) -> List[str]:
     if not texts:
         return []
+
+    if is_twitter_autopost_stub_enabled():
+        tweet_ids: List[str] = []
+        for idx, _ in enumerate(texts, start=1):
+            tweet_id = _build_stub_tweet_id(idx)
+            tweet_ids.append(tweet_id)
+            print(f"[twitter][stub] tweet_{idx}_id={tweet_id}", flush=True)
+        return tweet_ids
 
     creds = get_required_twitter_credentials()
     tweet_ids: List[str] = []

@@ -308,4 +308,6 @@ def build_thread_tweets(stats: Dict[str, Any]) -> List[str]:
         ),
         build_synthesis_text(stats),
     ]
-    return [trim_tweet(t, max_len=260) for t in tweets]
+    total = len(tweets)
+    numbered_tweets = [f"{idx}/{total} {tweet}" for idx, tweet in enumerate(tweets, start=1)]
+    return [trim_tweet(t, max_len=260) for t in numbered_tweets]
